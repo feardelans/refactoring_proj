@@ -1,0 +1,54 @@
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-wheel-metadata/
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+develop-eggs/
+downloads/
+sdist/
+wheels/
+
+# --- Тести та покриття (генеруються локально / у CI) ---
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+reports/
+.tox/
+.nox/
+hypothesis/
+
+# --- Локальна документація / звіти (діаграми — у твоєму звіті, не в репо) ---
+docs/
+
+# --- IDE та ОС ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Секрети та локальні env ---
+.env
+.env.*
+!.env.example
+*.local
+
+# --- Sonar / інші локальні скани ---
+.scannerwork/
+.sonar/
+
+# --- Jupyter (якщо з’явиться) ---
+.ipynb_checkpoints/

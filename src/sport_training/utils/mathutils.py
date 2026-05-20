@@ -1,0 +1,5 @@
+"""Допоміжні функції без побічних ефектів."""
+
+
+def clamp(value: int, low: int, high: int) -> int:
+    return max(low, min(high, value))

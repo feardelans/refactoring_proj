@@ -1,0 +1,56 @@
+name: ci-pipeline
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Test and coverage
+        run: |
+          mkdir -p reports
+          pytest --cov=sport_training --cov-report=xml --cov-report=html --junitxml=reports/junit.xml
+
+      - name: Upload test and coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-test-reports
+          path: |
+            coverage.xml
+            htmlcov/
+            reports/junit.xml
+
+      - name: Check SonarCloud token
+        id: sonar
+        run: |
+          if [ -n "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SONAR_TOKEN не задано — крок Sonar пропущено. Додайте secret у Settings → Secrets → Actions."
+          fi
+
+      - name: SonarQube / SonarCloud scan
+        if: steps.sonar.outputs.enabled == 'true'
+        uses: SonarSource/sonarqube-scan-action@v4.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io

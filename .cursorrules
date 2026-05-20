@@ -1,0 +1,17 @@
+# AI agent rules 
+
+## Forbidden
+
+- Do not add external databases (PostgreSQL, on-disk SQLite, Redis, etc.) or external HTTP/API calls. Use **in-memory** storage only, via repositories.
+- Do not implement a plain concrete class where a storage or service abstraction is needed for test doubles: use **`typing.Protocol`** or ABC in `src/sport_training/storage/` and dependency injection in services.
+
+## Required
+
+- Cover new business logic with **tests** first when possible (TDD): `tests/`, pytest.
+- Keep **coverage ≥ 70%** (locally: `pytest --cov=sport_training --cov-fail-under=70`).
+- Follow layers: `models` → `storage` (interfaces + in-memory) → `services` → `utils` (when needed).
+
+## Style
+
+- Python 3.11+, type hints, `dataclass` / `Enum` for models.
+- Minimal diffs: do not refactor unrelated code without a reason.
