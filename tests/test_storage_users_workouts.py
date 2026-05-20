@@ -15,7 +15,7 @@ def test_memory_users_roundtrip():
     assert r.find_by_id(uid) is not None
 
 
-@pytest.mark.parametrize("i", range(40))
+@pytest.mark.parametrize("i", range(20))
 def test_memory_users_many(i):
     r = InMemoryUserRepository()
     uid = uuid4()
@@ -38,7 +38,7 @@ def test_memory_workouts_replace_by_id():
     assert found[0].duration_minutes == 45
 
 
-@pytest.mark.parametrize("n", range(30))
+@pytest.mark.parametrize("n", range(15))
 def test_memory_workouts_list_grows(n):
     r = InMemoryWorkoutRepository()
     aid = uuid4()

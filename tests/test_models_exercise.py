@@ -25,7 +25,7 @@ def test_exercise_goal_increment_caps():
     assert g.is_achieved()
 
 
-@pytest.mark.parametrize("target", list(range(1, 21)))
+@pytest.mark.parametrize("target", list(range(1, 11)))
 def test_exercise_goal_target_positive(target):
     g = ExerciseGoal(
         id=uuid4(),

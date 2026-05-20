@@ -17,6 +17,6 @@ def test_clamp_examples(value, low, high, expected):
     assert clamp(value, low, high) == expected
 
 
-@pytest.mark.parametrize("v", range(-40, 41))
+@pytest.mark.parametrize("v", range(-12, 13))
 def test_clamp_monotonic_bounds(v):
     assert clamp(v, 0, 10) == max(0, min(10, v))

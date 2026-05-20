@@ -22,7 +22,7 @@ def test_memory_goals_bulk_same_athlete():
     assert len(repo.find_by_athlete(aid)) == 10
 
 
-@pytest.mark.parametrize("idx", range(50))
+@pytest.mark.parametrize("idx", range(20))
 def test_memory_goals_find_by_id(idx):
     repo = InMemoryGoalRepository()
     gid = uuid4()

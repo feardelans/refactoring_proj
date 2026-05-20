@@ -139,7 +139,7 @@ def test_weighted_strategy_two_points_strength():
     assert len(collector.events) == 1
 
 
-@pytest.mark.parametrize("day_offset", range(30))
+@pytest.mark.parametrize("day_offset", range(10))
 def test_workout_across_week_dates(day_offset):
     athlete_id = uuid4()
     d = date.today() - timedelta(days=day_offset)

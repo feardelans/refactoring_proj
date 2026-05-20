@@ -3,13 +3,14 @@
 [![CI](https://github.com/feardelans/refactoring_proj/actions/workflows/ci-pipeline.yml/badge.svg?branch=main)](https://github.com/feardelans/refactoring_proj/actions/workflows/ci-pipeline.yml?query=branch%3Amain)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=feardelans_refactoring_proj&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=feardelans_refactoring_proj)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Coverage](https://img.shields.io/badge/coverage-~92%25-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-~94%25-brightgreen)
 
-In-memory backend for tracking workouts, training goals, and athlete progress. No external database or HTTP dependencies — data lives in repository instances for the lifetime of a process (ideal for demos, tests, and local tooling).
+In-memory backend for tracking workouts, exercises, training goals, and athlete progress. No external database or HTTP dependencies — data lives in repository instances for the lifetime of a process (ideal for demos, tests, and local tooling).
 
 ## Features
 
 - **Workout logging** — athletes log sessions; coaches can log on behalf of an athlete.
+- **Exercise catalog & progress** — register exercises, set per-exercise goals, log performance, and view progress.
 - **Training goals** — target number of workouts with automatic progress updates after each log.
 - **Flexible progress rules** — uniform or weighted scoring per workout type (Strategy pattern).
 - **Goal achievements** — subscribers are notified when a goal is completed (Observer pattern).
@@ -28,6 +29,7 @@ flowchart TB
 
   subgraph services["services/"]
     WLS[WorkoutLogService]
+    EPS[ExerciseProgressService]
     STR[WorkoutProgressStrategy]
     PUB[GoalEventPublisher]
     LST[GoalAchievementListener]
@@ -37,15 +39,16 @@ flowchart TB
     UR[(UserRepository)]
     WR[(WorkoutRepository)]
     GR[(GoalRepository)]
-    IMU[InMemoryUserRepository]
-    IMW[InMemoryWorkoutRepository]
-    IMG[InMemoryGoalRepository]
+    ER[(ExerciseRepository)]
+    EGR[(ExerciseGoalRepository)]
+    ELR[(ExerciseLogRepository)]
   end
 
   subgraph models["models/"]
     M1[User / UserRole]
     M2[Workout / WorkoutType]
     M3[TrainingGoal]
+    M4[Exercise / ExerciseGoal / ExerciseLog]
   end
 
   subgraph utils["utils/"]
@@ -54,22 +57,17 @@ flowchart TB
     FMT[formatting]
   end
 
-  U --> WLS
-  WLS --> UR & WR & GR
-  WLS --> STR
-  WLS --> PUB
+  U --> WLS & EPS
+  WLS --> UR & WR & GR & STR & PUB
+  EPS --> UR & ER & EGR & ELR & PUB
   PUB --> LST
-  UR -.-> IMU
-  WR -.-> IMW
-  GR -.-> IMG
-  WLS --> M1 & M2 & M3
 ```
 
 ### Layers
 
 | Layer | Responsibility |
 |-------|----------------|
-| **`models`** | Domain entities and invariants (`Workout` is immutable; `TrainingGoal` validates ranges). |
+| **`models`** | Domain entities and invariants (`Workout` is immutable; goals validate ranges). |
 | **`storage`** | `Protocol`-based repository interfaces and in-memory implementations (`dict` / `list`). |
 | **`services`** | Use-case orchestration, progress strategies, and domain events. |
 | **`utils`** | Pure helpers: penalties, queue ordering, string formatting. |
@@ -87,17 +85,24 @@ flowchart TB
 1. `WorkoutLogService` loads the acting user and validates role / blocked state.
 2. The workout is persisted via `WorkoutRepository`.
 3. `WorkoutProgressStrategy` computes progress points for the session.
-4. Each active goal for the athlete is updated; newly achieved goals trigger `GoalAchievedEvent`.
+4. Each goal for the athlete is updated; newly achieved goals trigger `GoalAchievedEvent`.
 5. Registered listeners receive the event through `GoalEventPublisher`.
+
+### Typical flow: log an exercise
+
+1. `ExerciseProgressService` validates the user and exercise catalog entry.
+2. The `ExerciseLog` is saved via `ExerciseLogRepository`.
+3. Matching `ExerciseGoal` records for that athlete and exercise are updated.
+4. Newly achieved goals emit `GoalAchievedEvent` through the shared `GoalEventPublisher`.
 
 ## Project structure
 
 ```
 refactoring_proj/
 ├── src/sport_training/
-│   ├── models/          # User, Workout, TrainingGoal
+│   ├── models/          # User, Workout, TrainingGoal, Exercise, …
 │   ├── storage/         # Repository protocols + in-memory stores
-│   ├── services/        # WorkoutLogService, policies, events
+│   ├── services/        # WorkoutLogService, ExerciseProgressService, events
 │   └── utils/           # penalties, priority, formatting
 ├── tests/               # Unit and integration tests (pytest)
 ├── .github/workflows/   # CI: tests, coverage reports, SonarCloud
@@ -129,27 +134,30 @@ The suite uses **pytest** with **pytest-cov**. Tests live under `tests/` and mir
 | Type | What is tested | Examples |
 |------|----------------|----------|
 | **Unit** | Models, pure utils, strategies, event publisher | invalid `Workout` duration, `clamp()`, `UniformProgressStrategy`, penalty tables |
-| **Integration** | `WorkoutLogService` end-to-end with `InMemory*` repos | coach logs for athlete, blocked user rejected, goal achievement events |
+| **Integration** | `WorkoutLogService`, `ExerciseProgressService` with `InMemory*` repos | coach logs for athlete, blocked user rejected, goal achievement events |
 | **Storage** | In-memory repository behavior | save/replace, find by athlete, bulk inserts |
 
-Roughly **350** test cases (many via `@pytest.mark.parametrize` for edge values and boundary checks).
+**211** test cases (including parametrized boundary checks).
 
 ### Test layout
 
 ```
 tests/
-├── test_models_goal.py           # TrainingGoal invariants and increment logic
-├── test_models_user.py           # roles, blocked flag
-├── test_models_workout.py        # duration and workout types
-├── test_storage_goals.py         # InMemoryGoalRepository
+├── test_models_goal.py              # TrainingGoal invariants and increment logic
+├── test_models_exercise.py          # Exercise, ExerciseGoal, ExerciseLog
+├── test_models_user.py              # roles, blocked flag
+├── test_models_workout.py           # duration and workout types
+├── test_storage_goals.py            # InMemoryGoalRepository
+├── test_storage_exercises.py        # exercise-related repositories
 ├── test_storage_users_workouts.py
-├── test_workout_log_service.py   # main use case (integration)
-├── test_policy.py                # progress strategies
-├── test_events.py                # GoalEventPublisher
-├── test_penalties.py             # streak penalty algorithm
-├── test_priority.py              # slot queue ordering
-├── test_formatting_partial.py    # session summary helpers
-└── test_utils_math.py            # clamp utility
+├── test_workout_log_service.py      # workout logging (integration)
+├── test_exercise_progress_service.py
+├── test_policy.py                   # progress strategies
+├── test_events.py                   # GoalEventPublisher
+├── test_penalties.py                # streak penalty algorithm
+├── test_priority.py                 # slot queue ordering
+├── test_formatting_partial.py       # session summary helpers
+└── test_utils_math.py               # clamp utility
 ```
 
 ### Running tests
@@ -167,11 +175,17 @@ Quick run (no reports):
 pytest
 ```
 
+With coverage threshold (CI-style):
+
+```bash
+pytest --cov=sport_training --cov-report=term-missing --cov-fail-under=70
+```
+
 Run a single file or test:
 
 ```bash
 pytest tests/test_workout_log_service.py
-pytest tests/test_workout_log_service.py::test_log_updates_goal_and_emits_event -v
+pytest tests/test_exercise_progress_service.py::test_log_exercise_updates_goal_and_emits_event -v
 ```
 
 Parallel runs (optional, requires `pytest-xdist` from dev extras):
@@ -182,7 +196,7 @@ pytest -n auto
 
 ### Coverage
 
-Branch-aware coverage is configured in `pyproject.toml` (`[tool.coverage.*]`). Current overall coverage is **~92%**; most modules under `models/`, `services/`, and `storage/` are fully covered. Partial coverage in `utils/formatting.py` is intentional — only common paths are exercised.
+Branch-aware coverage is configured in `pyproject.toml` (`[tool.coverage.*]`). Current overall coverage is **~94%**; most modules under `models/`, `services/`, and `storage/` are fully covered. Partial coverage in `utils/formatting.py` is intentional — only common paths are exercised.
 
 | Output | Description |
 |--------|-------------|
@@ -217,8 +231,11 @@ docker run --rm sport-training
 | **User** | Athlete or coach; can be blocked from logging. |
 | **Workout** | Dated session with duration and type (strength / cardio / flexibility). |
 | **TrainingGoal** | Target number of workouts; tracks completed count toward the target. |
+| **Exercise** | Named entry in the exercise catalog. |
+| **ExerciseGoal** | Per-exercise target (e.g. total reps); tracks completed amount. |
+| **ExerciseLog** | Record of exercise performance on a given date. |
 
-**Roles:** `ATHLETE` logs own workouts; `COACH` may log for any athlete.
+**Roles:** `ATHLETE` logs own workouts and exercises; `COACH` may log for any athlete.
 
 **Utilities (standalone):**
 
@@ -231,4 +248,3 @@ docker run --rm sport-training
 - **pytest** + **pytest-cov** — testing and coverage
 - **GitHub Actions** — continuous integration
 - **SonarCloud** — static analysis and quality gate
-

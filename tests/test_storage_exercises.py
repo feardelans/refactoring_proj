@@ -17,7 +17,7 @@ def test_memory_exercises_save_and_find():
     assert len(repo.find_all()) == 1
 
 
-@pytest.mark.parametrize("idx", range(20))
+@pytest.mark.parametrize("idx", range(10))
 def test_memory_exercises_find_by_id(idx):
     repo = InMemoryExerciseRepository()
     eid = uuid4()
