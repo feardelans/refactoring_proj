@@ -24,5 +24,5 @@ class GoalEventPublisher:
         self._listeners.append(listener)
 
     def publish_achieved(self, event: GoalAchievedEvent) -> None:
-        for listener in list(self._listeners):
+        for listener in self._listeners.copy():
             listener.on_goal_achieved(event)

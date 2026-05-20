@@ -10,7 +10,7 @@ class WorkoutProgressStrategy(Protocol):
 
 
 class UniformProgressStrategy:
-    def progress_points(self, workout: Workout) -> int:
+    def progress_points(self, _workout: Workout) -> int:
         return 1
 
 
