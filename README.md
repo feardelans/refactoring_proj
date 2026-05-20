@@ -232,6 +232,3 @@ docker run --rm sport-training
 - **GitHub Actions** — continuous integration
 - **SonarCloud** — static analysis and quality gate
 
-## License
-
-MIT
