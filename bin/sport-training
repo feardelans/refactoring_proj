@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""Launcher: знаходить src/ відносно кореня проєкту."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+def _find_src_dir() -> Path:
+    candidates: list[Path] = []
+    here = Path(__file__).resolve().parent
+    candidates.append(here.parent)  # repo root (bin/ -> root)
+    candidates.append(Path.cwd())
+    if len(sys.argv) > 0:
+        candidates.append(Path(sys.argv[0]).resolve().parent.parent.parent)
+
+    for base in candidates:
+        src = base / "src"
+        if (src / "sport_training" / "cli.py").is_file():
+            return src
+    msg = "Не знайдено src/sport_training. Запускайте з кореня refactoring_proj."
+    raise RuntimeError(msg)
+
+
+def main() -> int:
+    src = _find_src_dir()
+    src_str = str(src)
+    if src_str not in sys.path:
+        sys.path.insert(0, src_str)
+    from sport_training.cli import main as cli_main
+
+    return cli_main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,35 +1,37 @@
-# Sport Training Service
+# Сервіс спортивних тренувань
 
 [![CI](https://github.com/feardelans/refactoring_proj/actions/workflows/ci-pipeline.yml/badge.svg?branch=main)](https://github.com/feardelans/refactoring_proj/actions/workflows/ci-pipeline.yml?query=branch%3Amain)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=feardelans_refactoring_proj&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=feardelans_refactoring_proj)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Coverage](https://img.shields.io/badge/coverage-~94%25-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-~86%25-brightgreen)
 
-In-memory backend for tracking workouts, exercises, training goals, and athlete progress. No external database or HTTP dependencies — data lives in repository instances for the lifetime of a process (ideal for demos, tests, and local tooling).
+In-memory бекенд для обліку тренувань, вправ, цілей, планів і прогресу спортсменів. Без зовнішньої БД і HTTP — дані живуть у репозиторіях протягом життя процесу (демо, тести, локальна консоль).
 
-## Features
+## Можливості
 
-- **Workout logging** — athletes log sessions; coaches can log on behalf of an athlete.
-- **Exercise catalog & progress** — register exercises, set per-exercise goals, log performance, and view progress.
-- **Training goals** — target number of workouts with automatic progress updates after each log.
-- **Flexible progress rules** — uniform or weighted scoring per workout type (Strategy pattern).
-- **Goal achievements** — subscribers are notified when a goal is completed (Observer pattern).
-- **Access control** — blocked users cannot log workouts; role checks for coach vs athlete.
-- **Domain utilities** — streak penalty calculation and slot-queue prioritization for scheduling scenarios.
+- **Журнал тренувань** — атлет записує сесії; тренер може записати за атлета.
+- **Каталог вправ і прогрес** — реєстрація вправ, цілі по вправі, запис виконання, перегляд прогресу.
+- **Цілі тренувань** — цільова кількість «одиниць прогресу»; оновлення після кожного запису тренування.
+- **Плани тренувань** — створення плану, заплановані сесії (дата + тип), виконано/пропущено; збіг за датою й типом автоматично закриває сесію в плані.
+- **Гнучкі правила прогресу** — рівномірні або вагові очки за типом тренування (патерн **Strategy**).
+- **Досягнення цілей** — підписники отримують подію при виконанні цілі (патерн **Observer**).
+- **Контроль доступу** — заблокований користувач не може логувати; перевірка ролі тренер/атлет.
+- **Доменні утиліти** — штрафи за пропуск після серії, пріоритизація черги на слот.
 
-## Architecture
+## Архітектура
 
-The codebase follows a layered design with dependency inversion: services depend on abstractions, not concrete storage.
+Шарова структура з інверсією залежностей: сервіси залежать від абстракцій, а не від конкретного сховища.
 
 ```mermaid
 flowchart TB
-  subgraph presentation["Usage (tests / CLI / future API)"]
-    U[Caller]
+  subgraph presentation["Використання (тести / CLI / майбутнє API)"]
+    U[Викликач]
   end
 
   subgraph services["services/"]
     WLS[WorkoutLogService]
     EPS[ExerciseProgressService]
+    PTS[PlanTrackingService]
     STR[WorkoutProgressStrategy]
     PUB[GoalEventPublisher]
     LST[GoalAchievementListener]
@@ -42,6 +44,8 @@ flowchart TB
     ER[(ExerciseRepository)]
     EGR[(ExerciseGoalRepository)]
     ELR[(ExerciseLogRepository)]
+    PR[(PlanRepository)]
+    PSR[(PlannedSessionRepository)]
   end
 
   subgraph models["models/"]
@@ -49,6 +53,7 @@ flowchart TB
     M2[Workout / WorkoutType]
     M3[TrainingGoal]
     M4[Exercise / ExerciseGoal / ExerciseLog]
+    M5[TrainingPlan / PlannedSession]
   end
 
   subgraph utils["utils/"]
@@ -57,63 +62,72 @@ flowchart TB
     FMT[formatting]
   end
 
-  U --> WLS & EPS
+  U --> WLS & EPS & PTS
   WLS --> UR & WR & GR & STR & PUB
   EPS --> UR & ER & EGR & ELR & PUB
+  PTS --> UR & PR & PSR
   PUB --> LST
 ```
 
-### Layers
+### Шари
 
-| Layer | Responsibility |
-|-------|----------------|
-| **`models`** | Domain entities and invariants (`Workout` is immutable; goals validate ranges). |
-| **`storage`** | `Protocol`-based repository interfaces and in-memory implementations (`dict` / `list`). |
-| **`services`** | Use-case orchestration, progress strategies, and domain events. |
-| **`utils`** | Pure helpers: penalties, queue ordering, string formatting. |
+| Шар | Відповідальність |
+|-----|------------------|
+| **`models`** | Доменні сутності та інваріанти (`Workout` незмінний; цілі валідують діапазони). |
+| **`storage`** | Інтерфейси репозиторіїв (`Protocol`) та in-memory реалізації (`dict` / `list`). |
+| **`services`** | Сценарії використання, стратегії прогресу, доменні події. |
+| **`utils`** | Чисті функції: штрафи, черга, форматування рядків. |
 
-### Design patterns
+### Патерни проєктування
 
-| Pattern | Where | Purpose |
-|---------|--------|---------|
-| **Strategy** | `WorkoutProgressStrategy` | Swap how many progress points a workout adds to goals. |
-| **Observer** | `GoalEventPublisher` / `GoalAchievementListener` | React when a goal transitions to “achieved”. |
-| **Repository** | `*Repository` protocols | Decouple business logic from persistence. |
+| Патерн | Де | Навіщо |
+|--------|-----|--------|
+| **Strategy** | `WorkoutProgressStrategy` | Змінювати, скільки очок прогресу дає тренування. |
+| **Observer** | `GoalEventPublisher` / `GoalAchievementListener` | Реагувати на перехід цілі в «досягнуто». |
+| **Repository** | протоколи `*Repository` | Відокремити бізнес-логіку від збереження. |
 
-### Typical flow: log a workout
+### Типовий сценарій: запис тренування
 
-1. `WorkoutLogService` loads the acting user and validates role / blocked state.
-2. The workout is persisted via `WorkoutRepository`.
-3. `WorkoutProgressStrategy` computes progress points for the session.
-4. Each goal for the athlete is updated; newly achieved goals trigger `GoalAchievedEvent`.
-5. Registered listeners receive the event through `GoalEventPublisher`.
+1. `WorkoutLogService` завантажує користувача, перевіряє роль і блокування.
+2. Тренування зберігається через `WorkoutRepository`.
+3. `WorkoutProgressStrategy` рахує очки прогресу.
+4. Оновлюються всі цілі атлета; нові досягнення → `GoalAchievedEvent`.
+5. Слухачі отримують подію через `GoalEventPublisher`.
 
-### Typical flow: log an exercise
+### Типовий сценарій: запис вправи
 
-1. `ExerciseProgressService` validates the user and exercise catalog entry.
-2. The `ExerciseLog` is saved via `ExerciseLogRepository`.
-3. Matching `ExerciseGoal` records for that athlete and exercise are updated.
-4. Newly achieved goals emit `GoalAchievedEvent` through the shared `GoalEventPublisher`.
+1. `ExerciseProgressService` перевіряє користувача та вправу в каталозі.
+2. `ExerciseLog` зберігається через `ExerciseLogRepository`.
+3. Оновлюються відповідні `ExerciseGoal` для атлета й вправи.
+4. Нові досягнення публікуються через спільний `GoalEventPublisher`.
 
-## Project structure
+### Типовий сценарій: план тренувань
+
+1. `PlanTrackingService` створює `TrainingPlan` і додає `PlannedSession` (дата, тип).
+2. Перегляд — підсумки та список сесій зі статусами `planned` / `completed` / `missed`.
+3. Після `log_workout` з тією ж датою й типом — `complete_matching_sessions` закриває заплановані сесії.
+
+## Структура проєкту
 
 ```
 refactoring_proj/
 ├── src/sport_training/
-│   ├── models/          # User, Workout, TrainingGoal, Exercise, …
-│   ├── storage/         # Repository protocols + in-memory stores
-│   ├── services/        # WorkoutLogService, ExerciseProgressService, events
+│   ├── models/          # User, Workout, TrainingGoal, Exercise, Plan, …
+│   ├── storage/         # Protocol репозиторіїв + in-memory
+│   ├── services/        # WorkoutLog, ExerciseProgress, PlanTracking, events
+│   ├── cli.py           # інтерактивна консоль
 │   └── utils/           # penalties, priority, formatting
-├── tests/               # Unit and integration tests (pytest)
-├── .github/workflows/   # CI: tests, coverage reports, SonarCloud
+├── tests/               # pytest
+├── scripts/             # fix_editable_pth.py (macOS)
+├── .github/workflows/   # CI: тести, coverage, SonarCloud
 ├── pyproject.toml
 ├── Dockerfile
 └── sonar-project.properties
 ```
 
-## Getting started
+## Початок роботи
 
-**Requirements:** Python 3.11+
+**Потрібно:** Python 3.11+
 
 ```bash
 git clone https://github.com/feardelans/refactoring_proj.git
@@ -123,88 +137,125 @@ python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install -e ".[dev]"
+
+# macOS: Python 3.12+ може ігнорувати приховані .pth у .venv — тоді import sport_training падає:
+python scripts/fix_editable_pth.py
+# альтернатива: pip install -e ".[dev]" --config-settings editable_mode=compat
 ```
 
-## Testing
+## Консольний застосунок
 
-The suite uses **pytest** with **pytest-cov**. Tests live under `tests/` and mirror the package layout: models and utils are tested in isolation; services are exercised with real in-memory repositories.
+**Інтерактивне меню** (вводите дані самі; сесія in-memory до виходу):
 
-### Scope
+```bash
+python -m sport_training
+# або:
+sport-training
+sport-training interactive
+```
 
-| Type | What is tested | Examples |
-|------|----------------|----------|
-| **Unit** | Models, pure utils, strategies, event publisher | invalid `Workout` duration, `clamp()`, `UniformProgressStrategy`, penalty tables |
-| **Integration** | `WorkoutLogService`, `ExerciseProgressService` with `InMemory*` repos | coach logs for athlete, blocked user rejected, goal achievement events |
-| **Storage** | In-memory repository behavior | save/replace, find by athlete, bulk inserts |
+**Автодемо** (готовий сценарій без вводу):
 
-**211** test cases (including parametrized boundary checks).
+```bash
+sport-training demo
+```
 
-### Test layout
+У меню: тренування, цілі, вправи, **плани**; `0` — вихід.
+
+| Пункт | Дія |
+|-------|-----|
+| 1 | Записати тренування (також закриває збіги в плані за датою + типом) |
+| 2 | Історія тренувань (журнал сесій) |
+| 3 | Додати ціль тренувань |
+| 4 | Активні цілі (без досягнутих) |
+| 5–8 | Вправи та прогрес |
+| 9–12 | Плани |
+| 13 | Автодемо |
+
+## Тестування
+
+Набір тестів: **pytest** + **pytest-cov**. Каталог `tests/` повторює структуру пакета: моделі й utils — ізольовано; сервіси — з реальними in-memory репозиторіями.
+
+### Охоплення
+
+| Тип | Що перевіряється | Приклади |
+|-----|------------------|----------|
+| **Модульні** | Моделі, utils, стратегії, publisher | невалідна тривалість `Workout`, `clamp()`, штрафи, черга |
+| **Інтеграційні** | `WorkoutLogService`, `ExerciseProgressService`, `PlanTrackingService` | тренер за атлета, блокування, події досягнення цілі |
+| **Сховище** | In-memory репозиторії | save/replace, пошук за атлетом |
+
+**226** тест-кейсів (зокрема параметризовані граничні випадки).
+
+### Розклад тестів
 
 ```
 tests/
-├── test_models_goal.py              # TrainingGoal invariants and increment logic
-├── test_models_exercise.py          # Exercise, ExerciseGoal, ExerciseLog
-├── test_models_user.py              # roles, blocked flag
-├── test_models_workout.py           # duration and workout types
-├── test_storage_goals.py            # InMemoryGoalRepository
-├── test_storage_exercises.py        # exercise-related repositories
+├── test_models_goal.py
+├── test_models_exercise.py
+├── test_models_plan.py
+├── test_models_user.py
+├── test_models_workout.py
+├── test_storage_goals.py
+├── test_storage_exercises.py
+├── test_storage_plans.py
 ├── test_storage_users_workouts.py
-├── test_workout_log_service.py      # workout logging (integration)
+├── test_workout_log_service.py
 ├── test_exercise_progress_service.py
-├── test_policy.py                   # progress strategies
-├── test_events.py                   # GoalEventPublisher
-├── test_penalties.py                # streak penalty algorithm
-├── test_priority.py                 # slot queue ordering
-├── test_formatting_partial.py       # session summary helpers
-└── test_utils_math.py               # clamp utility
+├── test_plan_tracking_service.py
+├── test_cli.py
+├── test_policy.py
+├── test_events.py
+├── test_penalties.py
+├── test_priority.py
+├── test_formatting_partial.py
+└── test_utils_math.py
 ```
 
-### Running tests
+### Запуск тестів
 
-Full suite with coverage and CI-style reports:
+Повний прогін з coverage (як у CI):
 
 ```bash
 mkdir -p reports
 pytest --cov=sport_training --cov-report=term-missing --cov-report=html --junitxml=reports/junit.xml
 ```
 
-Quick run (no reports):
+Швидко, без звітів:
 
 ```bash
 pytest
 ```
 
-With coverage threshold (CI-style):
+З порогом coverage (мінімум 70%):
 
 ```bash
 pytest --cov=sport_training --cov-report=term-missing --cov-fail-under=70
 ```
 
-Run a single file or test:
+Один файл або один тест:
 
 ```bash
 pytest tests/test_workout_log_service.py
-pytest tests/test_exercise_progress_service.py::test_log_exercise_updates_goal_and_emits_event -v
+pytest tests/test_plan_tracking_service.py -v
 ```
 
-Parallel runs (optional, requires `pytest-xdist` from dev extras):
+Паралельно (потрібен `pytest-xdist` з dev-залежностей):
 
 ```bash
 pytest -n auto
 ```
 
-### Coverage
+### Покриття коду
 
-Branch-aware coverage is configured in `pyproject.toml` (`[tool.coverage.*]`). Current overall coverage is **~94%**; most modules under `models/`, `services/`, and `storage/` are fully covered. Partial coverage in `utils/formatting.py` is intentional — only common paths are exercised.
+Налаштування в `pyproject.toml` (`[tool.coverage.*]`), з урахуванням гілок. Зараз **~86%** загалом; `models/`, `services/`, `storage/` — переважно повністю. Частково покриті `cli.py` та `utils/formatting.py`.
 
-| Output | Description |
-|--------|-------------|
-| `htmlcov/index.html` | Interactive coverage browser |
-| `coverage.xml` | Machine-readable coverage (CI / SonarCloud) |
-| `reports/junit.xml` | Test results in JUnit format |
+| Артефакт | Опис |
+|---------|------|
+| `htmlcov/index.html` | Інтерактивний звіт у браузері |
+| `coverage.xml` | XML для CI / SonarCloud |
+| `reports/junit.xml` | Результати тестів (JUnit) |
 
-Open the HTML report locally:
+Відкрити HTML локально:
 
 ```bash
 open htmlcov/index.html          # macOS
@@ -213,38 +264,40 @@ xdg-open htmlcov/index.html      # Linux
 
 ### CI
 
-Every push and pull request triggers `.github/workflows/ci-pipeline.yml`: install deps → pytest with coverage → upload `python-test-reports` artifact (`coverage.xml`, `htmlcov/`, `junit.xml`) → SonarCloud scan when `SONAR_TOKEN` is configured.
+Кожен push і pull request запускає `.github/workflows/ci-pipeline.yml`: встановлення залежностей → pytest з таблицею `term-missing`, XML/HTML, JUnit → артефакт `python-test-reports` → SonarCloud (якщо задано `SONAR_TOKEN`).
 
 ## Docker
 
-Build and run the test suite inside a container:
+Збірка та прогін тестів у контейнері:
 
 ```bash
 docker build -t sport-training .
 docker run --rm sport-training
 ```
 
-## Domain model (overview)
+## Доменна модель (огляд)
 
-| Entity | Description |
-|--------|-------------|
-| **User** | Athlete or coach; can be blocked from logging. |
-| **Workout** | Dated session with duration and type (strength / cardio / flexibility). |
-| **TrainingGoal** | Target number of workouts; tracks completed count toward the target. |
-| **Exercise** | Named entry in the exercise catalog. |
-| **ExerciseGoal** | Per-exercise target (e.g. total reps); tracks completed amount. |
-| **ExerciseLog** | Record of exercise performance on a given date. |
+| Сутність | Опис |
+|----------|------|
+| **User** | Атлет або тренер; може бути заблокований. |
+| **Workout** | Сесія з датою, тривалістю, типом (strength / cardio / flexibility). |
+| **TrainingGoal** | Ціль по кількості одиниць прогресу тренувань. |
+| **TrainingPlan** | Названий план тренувань для атлета. |
+| **PlannedSession** | Запланована сесія в плані (дата, тип, статус). |
+| **Exercise** | Запис у каталозі вправ. |
+| **ExerciseGoal** | Ціль по вправі (наприклад, повторення). |
+| **ExerciseLog** | Факт виконання вправи на дату. |
 
-**Roles:** `ATHLETE` logs own workouts and exercises; `COACH` may log for any athlete.
+**Ролі:** `ATHLETE` — свої тренування й вправи; `COACH` — може діяти за атлета.
 
-**Utilities (standalone):**
+**Утиліти (окремо від сервісів):**
 
-- `missed_streak_penalty_points()` — penalty grows with streak length before a missed session.
-- `sort_slot_requests()` — queue ordering by membership tier, then arrival time.
+- `missed_streak_penalty_points()` — штраф зростає з довжиною серії до пропуску.
+- `sort_slot_requests()` — черга за tier членства, потім час приходу.
 
-## Tech stack
+## Стек технологій
 
 - **Python 3.11+** — dataclasses, enums, `typing.Protocol`
-- **pytest** + **pytest-cov** — testing and coverage
-- **GitHub Actions** — continuous integration
-- **SonarCloud** — static analysis and quality gate
+- **pytest** + **pytest-cov** — тести та покриття
+- **GitHub Actions** — безперервна інтеграція
+- **SonarCloud** — статичний аналіз і quality gate
